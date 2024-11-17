@@ -100,7 +100,19 @@ if docker compose exec -u www-data nextcloud ./occ maintenance:mode --on; then
          echo "-"
     fi
 
+    if docker compose exec -u www-data nextcloud ./occ app:disable photos; then
+         echo "-"
+    fi
+
+    if docker compose exec -u www-data nextcloud ./occ app:disable circles; then
+         echo "-"
+    fi
+
     if docker compose exec -u www-data nextcloud ./occ app:install onlyoffice; then
+        echo "+"
+    fi
+
+    if docker compose exec -u www-data nextcloud ./occ app:install notes; then
         echo "+"
     fi
 
