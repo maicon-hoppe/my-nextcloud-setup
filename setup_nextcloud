@@ -1,0 +1,136 @@
+#!/bin/env bash
+
+. ./.env
+
+create_apache_volume()
+{
+    mkdir $APACHE_CERTS
+
+    cp docker-volumes/apache/0.conf $APACHE_CONF
+    cp docker-volumes/apache/default-ssl.conf $APACHE_SITE_SSL
+    cp docker-volumes/apache/certs/* $APACHE_CERTS
+}
+
+create_onlyoffice_volume()
+{
+    mkdir $ONLYOFFICE_DIR/certs
+    cp docker-volumes/onlyoffice/* $ONLYOFFICE_DIR/certs
+}
+
+post_config()
+{
+    docker compose exec nextcloud bash -c "echo 'export NXT_TRUSTED=$NXT_TRUSTED' >> /etc/apache2/envvars"
+    docker compose exec nextcloud bash -c "echo 'export NXT_CERT_PATH=$NXT_CERT_PATH' >> /etc/apache2/envvars"
+
+    docker compose exec nextcloud a2enconf 0.conf
+    docker compose exec nextcloud a2ensite default-ssl.conf
+    docker compose exec nextcloud a2enmod ssl
+    docker compose exec nextcloud service apache2 restart
+}
+
+while [ -n "$1" ]; do
+    case "$1" in
+        "-d" | "--delete")
+            echo "==================="
+            echo " Deleting all data "
+            echo "==================="
+
+            docker compose down -v
+
+            rm -rf $NXT_DATA
+            rm -rf $APACHE_CONF
+            rm -rf $APACHE_SITE_SSL
+            rm -rf $APACHE_CERTS
+            rm -rf $ONLYOFFICE_DIR/*
+            rm -rf $POSTGRES_DATA
+            ;;
+    esac
+    shift
+done
+
+create_apache_volume;
+create_onlyoffice_volume;
+
+docker compose up -d
+
+post_config;
+
+read -s -p "Press enter to continue: "
+echo
+
+if docker compose exec -u www-data nextcloud ./occ maintenance:mode --on; then
+    if docker compose exec -u www-data nextcloud ./occ config:system:set maintenance_window_start --type=integer --value=1; then
+        echo "Maintenance window set"
+    fi
+
+    if docker compose exec -u www-data nextcloud ./occ config:system:set trusted_domains 0 --value=$NXT_TRUSTED; then
+        echo "Trusted domain defined"
+    fi
+
+    if docker compose exec -u www-data nextcloud ./occ config:system:set overwrite.cli.url --value="https://nextcloud"; then
+        echo "Base URL defined"
+    fi
+
+    if docker compose exec -u www-data nextcloud ./occ config:system:set default_phone_region --value=BR; then
+        echo "Default phone region set"
+    fi
+
+    if docker compose exec -u www-data nextcloud ./occ maintenance:repair --include-expensive; then
+        echo "Expensive migrations done"
+    fi
+
+    if docker compose exec -u www-data nextcloud ./occ config:system:set allow_local_remote_servers --type bool --value="true"; then
+        echo "Authorizing Local server connection"
+    fi
+
+    if docker compose exec -u www-data nextcloud ./occ db:add-missing-indices; then
+        echo "Missing indexes added"
+    fi
+
+    # Installing/disabling apps
+    if docker compose exec -u www-data nextcloud ./occ app:disable dashboard; then
+        echo "-"
+    fi
+
+    if docker compose exec -u www-data nextcloud ./occ app:disable activity; then
+        echo "-"
+    fi
+
+    if docker compose exec -u www-data nextcloud ./occ app:disable app_api; then
+         echo "-"
+    fi
+
+    if docker compose exec -u www-data nextcloud ./occ app:install onlyoffice; then
+        echo "+"
+    fi
+
+    # App config
+    if docker compose exec -u www-data nextcloud ./occ config:app:set onlyoffice DocumentServerUrl --value="https://$NXT_TRUSTED:8443"; then
+        echo "Onlyoffice URL defined"
+    fi
+
+    if docker compose exec -u www-data nextcloud ./occ config:app:set onlyoffice verify_peer_off --value="true"; then
+        echo "Certificate verification disabled"
+    fi
+
+    ONLYOFFICE_SECRET=$(sudo docker exec onlyoffice /var/www/onlyoffice/documentserver/npm/json -f /etc/onlyoffice/documentserver/local.json 'services.CoAuthoring.secret.session.string')
+    if docker compose exec -u www-data nextcloud ./occ config:app:set onlyoffice jwt_secret --value=$ONLYOFFICE_SECRET; then
+        echo "Onlyoffice secret defined"
+    fi
+
+    ONLYOFFICE_FORMATS="{\"doc\":\"false\",\"docm\":\"false\",\"docx\":\"true\",\"dot\":\"false\",\"dotm\":\"false\",\"dotx\":\"false\",\"epub\":\"false\",\"fb2\":\"false\",\"fodt\":\"false\",\"htm\":\"false\",\"html\":\"false\",\"mht\":\"false\",\"mhtml\":\"false\",\"odt\":\"true\",\"ott\":\"false\",\"rtf\":\"false\",\"stw\":\"false\",\"sxw\":\"false\",\"txt\":\"false\",\"wps\":\"true\",\"xml\":\"false\",\"csv\":\"true\",\"fods\":\"false\",\"ods\":\"true\",\"ots\":\"false\",\"sxc\":\"false\",\"xls\":\"false\",\"xlsb\":\"false\",\"xlsm\":\"false\",\"xlsx\":\"true\",\"xlt\":\"false\",\"xltm\":\"false\",\"xltx\":\"false\",\"fodp\":\"false\",\"odp\":\"false\",\"otp\":\"false\",\"pot\":\"false\",\"potm\":\"false\",\"potx\":\"false\",\"pps\":\"false\",\"ppsm\":\"false\",\"ppsx\":\"false\",\"ppt\":\"false\",\"pptm\":\"false\",\"pptx\":\"true\",\"sxi\":\"false\",\"pdf\":\"true\",\"djvu\":\"false\",\"docxf\":\"true\",\"oform\":\"true\",\"oxps\":\"false\",\"xps\":\"false\"}"
+    if docker compose exec -u www-data nextcloud ./occ config:app:set onlyoffice defFormats --value=$ONLYOFFICE_FORMATS; then
+        echo "Onlyoffice view formats defined"
+    fi
+
+    ONLYOFFICE_EDITABLES="{\"epub\":\"false\",\"fb2\":\"false\",\"html\":\"false\",\"odt\":\"true\",\"ott\":\"false\",\"rtf\":\"false\",\"txt\":\"true\",\"csv\":\"true\",\"ods\":\"true\",\"ots\":\"false\",\"odp\":\"true\",\"otp\":\"false\"}"
+    if docker compose exec -u www-data nextcloud ./occ config:app:set onlyoffice editFormats --value=$ONLYOFFICE_EDITABLES; then
+        echo "Onlyoffice editable formats defined"
+    fi
+
+    if docker compose exec -u www-data nextcloud ./occ config:app:set onlyoffice customizationTheme --value="theme-dark"; then
+        echo "Defining dark theme on onlyoffice"
+    fi
+fi
+
+docker compose exec -u www-data nextcloud ./occ maintenance:mode --off

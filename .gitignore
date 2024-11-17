@@ -1,0 +1,7 @@
+.env
+
+nextcloud.crt
+nextcloud.key
+
+onlyoffice.crt
+onlyoffice.key

@@ -1,0 +1,75 @@
+networks:
+  nextcloud_net:
+    driver: bridge
+
+services:
+
+  # ===== VARIABLES ===== #
+  # NXT_ADMIN             #
+  # NXT_ADMIN_PASSWORD    #
+  # NXT_TRUSTED           #
+  # NXT_EXTRA_DOMAINS     #
+  # DB_USER               #
+  # DB_PASSWORD           #
+  # NXT_DATA              #
+  # APACHE_CONF           #
+  # APACHE_SITE_SSL       #
+  # APACHE_CERTS          #
+  # ONLYOFFICE_DIR        #
+  # NXT_CERT_PATH         #
+  # POSTGRES_DATA         #
+  # ===================== #
+
+  nextcloud:
+    image: nextcloud:latest
+    container_name: nextcloud
+    restart: always
+    depends_on:
+      - postgres
+    ports:
+      - 443:443
+    environment:
+      - NEXTCLOUD_ADMIN_USER=${NXT_ADMIN}
+      - NEXTCLOUD_ADMIN_PASSWORD=${NXT_ADMIN_PASSWORD}
+      - NEXTCLOUD_TRUSTED_DOMAINS=${NXT_EXTRA_DOMAINS}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=nextcloud
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - ${NXT_DATA}:/var/www/html
+      - ${APACHE_CONF}:/etc/apache2/conf-available/0.conf
+      - ${APACHE_SITE_SSL}:/etc/apache2/sites-available/default-ssl.conf
+      - ${APACHE_CERTS}:/etc/apache2/certs/
+    networks:
+      - nextcloud_net
+
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    restart: always
+    container_name: onlyoffice
+    depends_on:
+      - nextcloud
+    ports:
+      - 8443:443
+    environment:
+      - USE_UNAUTHORIZED_STORAGE=true
+    volumes:
+      - ${ONLYOFFICE_DIR}:/var/www/onlyoffice/Data
+    networks:
+      - nextcloud_net
+
+  postgres:
+    image: postgres:16
+    restart: always
+    container_name: postgres
+#    ports:
+#      - 5432:5432
+    environment:
+      - POSTGRES_DB=nextcloud
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - ${POSTGRES_DATA}:/var/lib/postgresql/data
+    networks:
+      - nextcloud_net
