@@ -43,16 +43,15 @@ while [ -n "$1" ]; do
             rm -rf $APACHE_CERTS
             rm -rf $ONLYOFFICE_DIR/*
             rm -rf $POSTGRES_DATA
+
+            create_apache_volume
+            create_onlyoffice_volume
             ;;
     esac
     shift
 done
 
-create_apache_volume;
-create_onlyoffice_volume;
-
 docker compose up -d
-
 post_config;
 
 read -s -p "Press enter to continue: "
